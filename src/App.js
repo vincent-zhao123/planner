@@ -221,11 +221,7 @@ export default function App() {
   );
 
   const [mode, setMode] = useState(PLAN_MODES.STANDARD);
-  const [values, setValues] = useState(initialValues);
-  const [errors, setErrors] = useState({});
-  const [rrspAuto, setRrspAuto] = useState(false);
 
-  const [rrspContributeAuto] = useState(false);
 
   const visibleSchema = useMemo(() => {
     return schema.map((group) => ({
@@ -245,6 +241,12 @@ export default function App() {
     }
     return v;
   }, [schema]);
+
+  const [values, setValues] = useState(initialValues);
+  const [errors, setErrors] = useState({});
+  const [rrspAuto, setRrspAuto] = useState(false);
+
+  const [rrspContributeAuto] = useState(false);
 
   function formatUnit(field) {
     if (field.unit === "percent") return "%";
