@@ -221,6 +221,11 @@ export default function App() {
   );
 
   const [mode, setMode] = useState(PLAN_MODES.STANDARD);
+  const [values, setValues] = useState(initialValues);
+  const [errors, setErrors] = useState({});
+  const [rrspAuto, setRrspAuto] = useState(false);
+
+  const [rrspContributeAuto] = useState(false);
 
   const visibleSchema = useMemo(() => {
     return schema.map((group) => ({
@@ -240,12 +245,6 @@ export default function App() {
     }
     return v;
   }, [schema]);
-
-  const [values, setValues] = useState(initialValues);
-  const [errors, setErrors] = useState({});
-  const [rrspAuto, setRrspAuto] = useState(false);
-
-  const [rrspContributeAuto] = useState(false);
 
   function formatUnit(field) {
     if (field.unit === "percent") return "%";
@@ -279,7 +278,7 @@ export default function App() {
 
   function validateAll(nextValues, ctx) {
     const nextErrors = {};
-    for (const group of schema) {
+    for (const group of visibleSchema) {
       for (const field of group.fields) {
         const err = validateOne(field, nextValues[field.key], ctx);
         if (err) nextErrors[field.key] = err;
@@ -365,60 +364,40 @@ export default function App() {
   };*/
 
   async function handleSubmit(e) {
-    console.log("Submit clicked")
-
     e.preventDefault();
-    //await downloadExcel(numericPayload);
-
-    const ctx = { rrspContributeAuto };
+  
+    const ctx = { rrspContributeAuto, mode };
+  
     const nextErrors = validateAll(values, ctx);
     setErrors(nextErrors);
+  
+    if (Object.keys(nextErrors).length > 0) return;
 
-    if (Object.keys(nextErrors).length > 0) {
-      return;
-    }
-
-    // Convert to numbers so backend gets numeric types
-    const numericPayload = {};
-    for (const group of schema) {
+    const numericInputs = {};
+    for (const group of visibleSchema) {
       for (const f of group.fields) {
         const raw = values[f.key];
-        numericPayload[f.key] = raw === "" ? "" : Number(raw);
+        numericInputs[f.key] = raw === "" ? "" : Number(raw);
       }
     }
-    console.log("Payload:", numericPayload);
+
+    const payload = {
+      mode,
+      inputs: numericInputs,
+    };
+  
+    console.log("Payload:", payload);
     console.log("About to download...");
-
-    /*const income = toNum(numericPayload.incomeAnnual);
-    const expenses = toNum(numericPayload.expensesAnnual);
-
-    const rrsp = rrspContributeAuto ? 18 : toNum(numericPayload.rrspContribute);
-    const tfsa = toNum(numericPayload.tfsaContribute);
-
-    const totalOut = expenses + rrsp + tfsa;
-
-    if (totalOut > income) {
-      alert(
-        `❌ Submission Error\n\n` +
-        `Income: $${income}\n` +
-        `Expenses: $${expenses}\n` +
-        `RRSP: $${rrsp}\n` +
-        `TFSA: $${tfsa}\n` +
-        `----------------------\n` +
-        `Total: $${totalOut}\n\n` +
-        `Reason: expenses + RRSP + TFSA must be ≤ income.`
-      );
-      return;
-    }*/
-
+  
     try {
-      await downloadExcel(numericPayload);
+      await downloadExcel(payload);
       console.log("Download finished (request completed).");
     } catch (err) {
       console.error("Download failed:", err);
       alert("Download failed. Check Console + Network.");
     }
   }
+  
 
   // Simple inline styling (so you don't need to touch App.css)
   const styles = {
