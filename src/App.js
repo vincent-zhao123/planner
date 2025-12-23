@@ -8,16 +8,18 @@ import "./App.css";
 async function downloadExcel(payload) {
   console.log("downloadExcel called with:", payload);
 
+  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:3001";
+
   let res;
   try {
-    res = await fetch("http://localhost:3001/api/generate-excel", {
+    res = await fetch(`${API_BASE}/api/generate-excel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
   } catch (err) {
     console.error("FETCH FAILED:", err);
-    alert("Fetch failed. Backend not reachable or blocked. Check Console/Network.");
+    alert("Fetch failed. Backend not reachable or blocked.");
     throw err;
   }
 
