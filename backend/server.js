@@ -7,9 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/health", (req, res) => {
-  res.send("ok");
-});
+app.get("/", (req, res) => res.send("planner backend running"));
+app.get("/health", (req, res) => res.send("ok"));
 
 // ---------- helpers ----------
 const toNum = (v) => {
@@ -262,7 +261,7 @@ app.post("/api/generate-excel", async (req, res) => {
       ws.getCell(`D${r}`).value = row.rrspW;
       ws.getCell(`E${r}`).value = row.rrspEnd;
 
-      if (!tfsaCleared && row.tfsaInit <= 0) {
+      if (!tfsaCleared && row.tfsaInit <= 0 && row.tfsaC <= 0) {
         tfsaCleared = true;
       }
 
