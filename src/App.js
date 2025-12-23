@@ -111,7 +111,7 @@ export default function App() {
       },
 
       {
-        section: "TSFA ROI, TFSA INITIAL BALANCE, TSFA CONTRIBUTE",
+        section: "TFSA ROI, TFSA INITIAL BALANCE, TFSA CONTRIBUTE",
         fields: [
           {
             key: "tfsaRoi",
@@ -213,6 +213,17 @@ export default function App() {
     ],
     []
   );
+
+  const visibleSchema = useMemo(() => {
+    return schema.map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => {
+        if (mode === PLAN_MODES.FIND_MAX_YEARS && field.key === "yearsToPlan") return false;
+        if (mode === PLAN_MODES.SOLVE_EXPENSES && field.key === "expensesAnnual") return false;
+        return true;
+      }),
+    }));
+  }, [schema, mode]);
 
   const initialValues = useMemo(() => {
     const v = {};
@@ -523,7 +534,7 @@ export default function App() {
 
 
       <form onSubmit={handleSubmit}>
-        {schema.map((group) => (
+        {visibleSchema.map((group) => (
           <div key={group.section} style={styles.card}>
             <div style={styles.sectionTitle}>{group.section}</div>
 
