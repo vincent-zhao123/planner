@@ -8,18 +8,19 @@ import "./App.css";
 async function downloadExcel(payload) {
   console.log("downloadExcel called with:", payload);
 
-  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:3001";
-
   let res;
   try {
-    res = await fetch(`${API_BASE}/api/generate-excel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    res = await fetch(
+      "https://planner-2juz.onrender.com/api/generate-excel",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
   } catch (err) {
     console.error("FETCH FAILED:", err);
-    alert("Fetch failed. Backend not reachable or blocked.");
+    alert("Fetch failed. Backend not reachable.");
     throw err;
   }
 
