@@ -281,7 +281,7 @@ export default function App() {
     });
   }
 
-  function handleToggleRrspAuto(e) {
+  /*function handleToggleRrspAuto(e) {
     const checked = e.target.checked;
     setRrspContributeAuto(checked);
 
@@ -296,7 +296,7 @@ export default function App() {
       if (checked) delete copy.rrspContribute;
       return copy;
     });
-  }
+  }*/
 
   function handleReset() {
     setValues(initialValues);
@@ -330,7 +330,7 @@ export default function App() {
     }
   };
 
-  const handleIncomeChange = (val) => {
+  /*const handleIncomeChange = (val) => {
     setValues((prev) => {
       const next = { ...prev, incomeAnnual: val };
   
@@ -340,7 +340,7 @@ export default function App() {
   
       return next;
     });
-  };
+  };*/
 
   async function handleSubmit(e) {
     console.log("Submit clicked")
