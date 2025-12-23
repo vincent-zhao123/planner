@@ -378,7 +378,7 @@ export default function App() {
 
     const totalOut = expenses + rrsp + tfsa;
 
-    if (totalOut > income) {
+    /*if (totalOut > income) {
       alert(
         `❌ Submission Error\n\n` +
         `Income: $${income}\n` +
@@ -390,7 +390,7 @@ export default function App() {
         `Reason: expenses + RRSP + TFSA must be ≤ income.`
       );
       return;
-    }
+    }*/
 
     try {
       await downloadExcel(numericPayload);
