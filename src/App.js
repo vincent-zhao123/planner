@@ -222,6 +222,14 @@ export default function App() {
     return v;
   }, [schema]);
 
+  const PLAN_MODES = {
+    STANDARD: "standard",          // Years + Expenses
+    FIND_MAX_YEARS: "findMaxYears",// no Years input
+    SOLVE_EXPENSES: "solveExpenses"// no Expenses input
+  };
+  
+  const [mode, setMode] = useState(PLAN_MODES.STANDARD);
+
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState({});
   const [rrspAuto, setRrspAuto] = useState(false);
@@ -474,10 +482,45 @@ export default function App() {
     <div style={styles.page}>
       <div style={styles.header}>
         <h2 style={{ margin: 0 }}>Retirement Plan Input Form</h2>
-        <p style={{ margin: "6px 0 0", color: "#555" }}>
-          Fill in the inputs below, then submit to view the JSON payload.
+
+        <p style={{ margin: "6px 0 12px", color: "#555" }}>
+          Fill in the inputs below, then submit to view the plan result.
         </p>
+
+        {/* Mode selector */}
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+          <label style={styles.radioLabel}>
+            <input
+              type="radio"
+              name="mode"
+              checked={mode === "standard"}
+              onChange={() => setMode("standard")}
+            />
+            Standard Plan
+          </label>
+
+          <label style={styles.radioLabel}>
+            <input
+              type="radio"
+              name="mode"
+              checked={mode === "findMaxYears"}
+              onChange={() => setMode("findMaxYears")}
+            />
+            Find Max Years
+          </label>
+
+          <label style={styles.radioLabel}>
+            <input
+              type="radio"
+              name="mode"
+              checked={mode === "solveExpenses"}
+              onChange={() => setMode("solveExpenses")}
+            />
+            Solve Expenses
+          </label>
+        </div>
       </div>
+
 
       <form onSubmit={handleSubmit}>
         {schema.map((group) => (
