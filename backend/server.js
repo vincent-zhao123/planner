@@ -164,7 +164,7 @@ app.post("/api/generate-excel", async (req, res) => {
       if (tfsaInit === 0) tfsaDepleted = true;
 
       // if depleted, force withdraw to 0 and keep balance at 0 going forward
-      if (tfsaDepleted) {
+      if (tfsaDepleted && tfsa <= 0) {
         tfsaW = 0;
         tfsaEnd = 0;
       }
