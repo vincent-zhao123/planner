@@ -7,6 +7,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/health", (req, res) => {
+  res.send("ok");
+});
+
 // ---------- helpers ----------
 const toNum = (v) => {
   if (v === null || v === undefined) return 0;
