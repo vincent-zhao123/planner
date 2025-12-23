@@ -5,6 +5,12 @@ import "./App.css";
  * Retirement Planner 
  */
 
+const PLAN_MODES = {
+  STANDARD: "standard",          // Years + Expenses
+  FIND_MAX_YEARS: "findMaxYears",// no Years input
+  SOLVE_EXPENSES: "solveExpenses"// no Expenses input
+};
+
 async function downloadExcel(payload) {
   console.log("downloadExcel called with:", payload);
 
@@ -232,12 +238,6 @@ export default function App() {
     }
     return v;
   }, [schema]);
-
-  const PLAN_MODES = {
-    STANDARD: "standard",          // Years + Expenses
-    FIND_MAX_YEARS: "findMaxYears",// no Years input
-    SOLVE_EXPENSES: "solveExpenses"// no Expenses input
-  };
   
   const [mode, setMode] = useState(PLAN_MODES.STANDARD);
 
