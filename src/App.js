@@ -220,6 +220,8 @@ export default function App() {
     []
   );
 
+  const [mode, setMode] = useState(PLAN_MODES.STANDARD);
+
   const visibleSchema = useMemo(() => {
     return schema.map((group) => ({
       ...group,
@@ -238,8 +240,6 @@ export default function App() {
     }
     return v;
   }, [schema]);
-  
-  const [mode, setMode] = useState(PLAN_MODES.STANDARD);
 
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState({});
