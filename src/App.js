@@ -223,7 +223,7 @@ export default function App() {
   const [errors, setErrors] = useState({});
   const [rrspAuto, setRrspAuto] = useState(false);
 
-  const [rrspContributeAuto, setRrspContributeAuto] = useState(false);
+  const [rrspContributeAuto] = useState(false);
 
   function formatUnit(field) {
     if (field.unit === "percent") return "%";
