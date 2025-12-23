@@ -370,7 +370,7 @@ export default function App() {
     console.log("Payload:", numericPayload);
     console.log("About to download...");
 
-    const income = toNum(numericPayload.incomeAnnual);
+    /*const income = toNum(numericPayload.incomeAnnual);
     const expenses = toNum(numericPayload.expensesAnnual);
 
     const rrsp = rrspContributeAuto ? 18 : toNum(numericPayload.rrspContribute);
@@ -378,7 +378,7 @@ export default function App() {
 
     const totalOut = expenses + rrsp + tfsa;
 
-    /*if (totalOut > income) {
+    if (totalOut > income) {
       alert(
         `❌ Submission Error\n\n` +
         `Income: $${income}\n` +
