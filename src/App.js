@@ -37,7 +37,16 @@ async function downloadExcel(payload) {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "retirement_inputs.xlsx";
+  
+  const filename =
+    payload.mode === "standard"
+      ? "retirement-plan.xlsx"
+      : payload.mode === "findMaxYears"
+      ? "retirement-plan-max-years.xlsx"
+      : "retirement-plan-solved-expenses.xlsx";
+
+  a.download = filename;
+
   document.body.appendChild(a);
   a.click();
   a.remove();
