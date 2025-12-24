@@ -68,12 +68,19 @@ function solveRRSPWithdrawal({
 
 app.post("/api/generate-excel", async (req, res) => {
   try {
-    const d = req.body || {};
+    const { mode = "standard", inputs = {} } = req.body || {};
+    const d = inputs;
 
     // ---- INPUTS (EXACT NAMES YOU PROVIDED) ----
     const currentAge = toInt(d.currentAge);
     const yearsToRetire = Math.max(0, toInt(d.yearsToRetire));
-    const yearsToPlan = Math.max(1, toInt(d.yearsToPlan));
+    const yearsToPlanInput = toInt(d.yearsToPlan);
+    const MAX_YEARS_CAP = 120;
+
+    let yearsToPlan =
+      mode === "findMaxYears"
+        ? MAX_YEARS_CAP
+        : Math.max(1, yearsToPlanInput);
 
     const incomeAnnual = toNum(d.incomeAnnual);
     const expensesAnnual = toNum(d.expensesAnnual);
@@ -99,100 +106,116 @@ app.post("/api/generate-excel", async (req, res) => {
       rrspRoi,
     });
 
-    // ---- Simulation ----
-    // Store "previous year ending balance" for years > 0 initialization
-    let rrspEndPrev = rrspInitialBalance;
-    let tfsaEndPrev = tfsaInitialBalance;
-    let nonrEndPrev = nonRegisteredInitialBalance;
-
-    const rows = [];
-
     const EPS = 1e-9;
-    let tfsaDepleted = false;
-    let tfsaCleared = false;
 
-    for (let t = 0; t < yearsToPlan; t++) {
-      const age = currentAge + t;
-      const income = t < yearsToRetire ? incomeAnnual : 0;
-      const expense = expensesAnnual * Math.pow(1 + inflationRate, t);
+    function runProjection(expensesBase, yearsToPlanLocal) {
+      let rrspEndPrev = rrspInitialBalance;
+      let tfsaEndPrev = tfsaInitialBalance;
+      let nonrEndPrev = nonRegisteredInitialBalance;
 
-      // ===== RRSP =====
-      const rrspInit = t === 0 ? rrspInitialBalance : rrspEndPrev * (1 + rrspRoi);
-      const rrspC = t < yearsToRetire ? rrspContribute : 0;
-      const rrspW = t >= yearsToRetire ? rrspWithdrawFixed : 0;
-      const rrspEnd = rrspInit + rrspC - rrspW;
-      rrspEndPrev = rrspEnd;
+      const rows = [];
+      let depletedEarly = false;
 
-      // ===== TFSA =====
-      const tfsaInit = t === 0 ? tfsaInitialBalance : tfsaEndPrev * (1 + tfsaRoi);
-      const tfsaC = t < yearsToRetire ? tfsaContribute : 0;
-      let tfsaW = 0; // only used after non-registered is depleted/insufficient (in retirement)
+      for (let t = 0; t < yearsToPlanLocal; t++) {
+        const age = currentAge + t;
+        const income = t < yearsToRetire ? incomeAnnual : 0;
 
-      // ===== NON-REGISTERED =====
-      const nonrInit =
-        t === 0 ? nonRegisteredInitialBalance : nonrEndPrev * (1 + nonRegisteredRoi);
+        const expense = expensesBase * Math.pow(1 + inflationRate, t);
 
-      // Working years contribution rule:
-      // non-r contribute = income - expense - rrsp contribute - tfsa contribute (only when income != 0)
-      const nonrC =
-        income > 0 ? Math.max(0, income - expense - rrspC - tfsaC) : 0;
+        // ===== RRSP =====
+        const rrspInit = t === 0 ? rrspInitialBalance : rrspEndPrev * (1 + rrspRoi);
+        const rrspC = t < yearsToRetire ? rrspContribute : 0;
+        const rrspW = t >= yearsToRetire ? rrspWithdrawFixed : 0;
+        const rrspEnd = rrspInit + rrspC - rrspW;
+        rrspEndPrev = rrspEnd;
 
-      let nonrW = 0;
+        // ===== TFSA =====
+        const tfsaInit = t === 0 ? tfsaInitialBalance : tfsaEndPrev * (1 + tfsaRoi);
+        const tfsaC = t < yearsToRetire ? tfsaContribute : 0;
+        let tfsaW = 0;
 
-      // Retirement spending coverage: RRSP fixed -> NON-R -> TFSA (only once NON-R can’t cover)
-      if (income === 0) {
-        const needAfterRRSP = Math.max(0, expense - rrspW);
+        // ===== NON-REGISTERED =====
+        const nonrInit = t === 0 ? nonRegisteredInitialBalance : nonrEndPrev * (1 + nonRegisteredRoi);
 
-        nonrW = Math.min(nonrInit, needAfterRRSP);
-        const remaining = needAfterRRSP - nonrW;
+        const nonrC = income > 0 ? Math.max(0, income - expense - rrspC - tfsaC) : 0;
+        let nonrW = 0;
 
-        if (remaining > 0) {
-          tfsaW = Math.min(tfsaInit + tfsaC, remaining);
+        // Retirement spending coverage: RRSP fixed -> NON-R -> TFSA
+        if (income === 0) {
+          const needAfterRRSP = Math.max(0, expense - rrspW);
+
+          if (needAfterRRSP > nonrInit + (tfsaInit + tfsaC) + EPS) {
+            depletedEarly = true;
+          }
+
+          nonrW = Math.min(nonrInit, needAfterRRSP);
+          const remaining = needAfterRRSP - nonrW;
+          if (remaining > 0) {
+            tfsaW = Math.min(tfsaInit + tfsaC, remaining);
+          }
+        }
+
+        const nonrEnd = nonrInit + nonrC - nonrW;
+        nonrEndPrev = nonrEnd;
+
+        let tfsaEnd = tfsaInit + tfsaC - tfsaW;
+        if (tfsaEnd < EPS) tfsaEnd = 0;
+        tfsaEndPrev = tfsaEnd;
+
+        rows.push({
+          age, income, expense,
+          rrspInit, rrspC, rrspW, rrspEnd,
+          tfsaInit, tfsaC, tfsaW, tfsaEnd,
+          nonrInit, nonrC, nonrW, nonrEnd,
+        });
+
+        if (depletedEarly && t < yearsToPlanLocal - 1) break;
+      }
+
+      const last = rows[rows.length - 1] || {};
+      const endingTotal = (last.rrspEnd || 0) + (last.tfsaEnd || 0) + (last.nonrEnd || 0);
+
+      return { rows, depletedEarly, endingTotal };
+    }
+
+    let solvedInitialExpense = null;
+
+    if (mode === "solveExpenses") {
+      // yearsToPlan must be provided by user in mode 3
+      const yearsToPlanLocal = Math.max(1, yearsToPlan);
+
+      // Binary search for MAX initial expense that does NOT deplete early
+      let lo = 0;
+      let hi = Math.max(1000, (rrspInitialBalance + tfsaInitialBalance + nonRegisteredInitialBalance) * 2); // starter
+      // Expand hi until it definitely depletes early (so we have a bracket)
+      while (!runProjection(hi, yearsToPlanLocal).depletedEarly && hi < 1e9) {
+        hi *= 2;
+      }
+
+      for (let i = 0; i < 50; i++) { // enough for dollar-level precision
+        const mid = (lo + hi) / 2;
+        const r = runProjection(mid, yearsToPlanLocal);
+
+        if (r.depletedEarly) {
+          hi = mid;       // too high
+        } else {
+          lo = mid;       // can afford more
         }
       }
 
-      const nonrEnd = nonrInit + nonrC - nonrW;
-      nonrEndPrev = nonrEnd;
-
-      // TFSA end balance (use let because we may clamp)
-      let tfsaEnd = tfsaInit + tfsaC - tfsaW;
-
-      // clamp tiny negatives to 0
-      if (tfsaEnd < EPS) tfsaEnd = 0;
-
-      // once TFSA hits 0, mark depleted (and keep it depleted)
-      if (tfsaInit === 0) tfsaDepleted = true;
-
-      // if depleted, force withdraw to 0 and keep balance at 0 going forward
-      if (tfsaDepleted && tfsaEnd <= 0) {
-        tfsaW = 0;
-        tfsaEnd = 0;
-      }
-
-      tfsaEndPrev = tfsaEnd;
-
-
-      rows.push({
-        age,
-        income,
-        expense,
-
-        rrspInit,
-        rrspC,
-        rrspW,
-        rrspEnd,
-
-        tfsaInit,
-        tfsaC,
-        tfsaW,
-        tfsaEnd,
-
-        nonrInit,
-        nonrC,
-        nonrW,
-        nonrEnd,
-      });
+      solvedInitialExpense = Math.round(lo); // $1 precision
     }
+
+    let projection;
+
+    if (mode === "solveExpenses") {
+      projection = runProjection(solvedInitialExpense, yearsToPlan);
+    } else {
+      // standard + findMaxYears (for now)
+      projection = runProjection(expensesAnnual, yearsToPlan);
+    }
+
+    const rows = projection.rows;
 
     // ---- Excel ----
     const wb = new ExcelJS.Workbook();
@@ -292,6 +315,23 @@ app.post("/api/generate-excel", async (req, res) => {
     ws.getCell("R1").value = rrspWithdrawFixed;
     ws.getCell("R1").numFmt = moneyFmt;
     ws.getCell("Q1").font = { bold: true };
+
+    ws.getCell("Q2").value = "Mode";
+    ws.getCell("R2").value = mode;
+    ws.getCell("Q2").font = { bold: true };
+
+    if (mode === "findMaxYears") {
+      ws.getCell("Q3").value = "Computed Years to Plan";
+      ws.getCell("R3").value = rows.length;
+      ws.getCell("Q3").font = { bold: true };
+    }
+
+    if (mode === "solveExpenses") {
+      ws.getCell("Q3").value = "Solved Initial Expense (Year 0)";
+      ws.getCell("R3").value = solvedInitialExpense;
+      ws.getCell("R3").numFmt = moneyFmt;
+      ws.getCell("Q3").font = { bold: true };
+    }
 
     const buffer = await wb.xlsx.writeBuffer();
 
