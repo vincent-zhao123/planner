@@ -274,6 +274,8 @@ app.post("/api/generate-excel", async (req, res) => {
 
     // Data rows
     const startRow = 3;
+    let tfsaCleared = false;
+    
     rows.forEach((row, i) => {
       const r = startRow + i;
 
