@@ -178,6 +178,60 @@ app.post("/api/generate-excel", async (req, res) => {
       return { rows, depletedEarly, endingTotal };
     }
 
+    function simulateGivenN(N, expensesBase) {
+      const rrspW = solveRRSPWithdrawal({
+        yearsToRetire,
+        yearsToPlan: N,
+        rrspInitialBalance,
+        rrspContribute,
+        rrspRoi,
+      });
+
+      const proj = runProjection(expensesBase, N, rrspW);
+      return { yearsSurvived: proj.rows.length, rrspW, proj };
+    }
+
+    let yearsToPlanFinal = yearsToPlan;   // default for standard/solveExpenses
+    let rrspWithdrawFixedFinal = null;
+
+    if (mode === "findMaxYears") {
+      let N = MAX_YEARS_CAP;
+      let last = -1;
+
+      for (let iter = 0; iter < 25; iter++) {
+        const r = simulateGivenN(N, expensesAnnual);
+        const N2 = r.yearsSurvived;
+
+        if (N2 === N || N2 === last) {
+          yearsToPlanFinal = N2;
+          rrspWithdrawFixedFinal = r.rrspW;
+          break;
+        }
+
+        last = N;
+        N = N2;
+      }
+
+      // If it never broke (rare), finalize with latest N
+      if (rrspWithdrawFixedFinal == null) {
+        const r = simulateGivenN(N, expensesAnnual);
+        yearsToPlanFinal = r.yearsSurvived;
+        rrspWithdrawFixedFinal = r.rrspW;
+      }
+    }
+
+    // Standard + solveExpenses: rrspWithdrawFixedFinal computed normally
+    if (mode !== "findMaxYears") {
+      rrspWithdrawFixedFinal = solveRRSPWithdrawal({
+        yearsToRetire,
+        yearsToPlan: yearsToPlanFinal,
+        rrspInitialBalance,
+        rrspContribute,
+        rrspRoi,
+      });
+    }
+
+
     let solvedInitialExpense = null;
 
     if (mode === "solveExpenses") {
@@ -207,7 +261,7 @@ app.post("/api/generate-excel", async (req, res) => {
     }
 
     // determine final yearsToPlan
-    let yearsToPlanFinal = yearsToPlan;
+    yearsToPlanFinal = yearsToPlan;
 
     if (mode === "findMaxYears") {
       const tmp = runProjection(
@@ -219,7 +273,7 @@ app.post("/api/generate-excel", async (req, res) => {
     }
 
     // solve RRSP withdrawal with FINAL horizon
-    const rrspWithdrawFixedFinal = solveRRSPWithdrawal({
+    rrspWithdrawFixedFinal = solveRRSPWithdrawal({
       yearsToRetire,
       yearsToPlan: yearsToPlanFinal,
       rrspInitialBalance,
@@ -229,7 +283,7 @@ app.post("/api/generate-excel", async (req, res) => {
 
     // final projection used by Excel
     const expenseBase =
-      mode === "solveExpenses" ? solvedInitialExpense : expensesAnnual;
+  mode === "solveExpenses" ? solvedInitialExpense : expensesAnnual;
 
     const finalProjection = runProjection(
       expenseBase,
