@@ -336,7 +336,7 @@ app.post("/api/generate-excel", async (req, res) => {
 
     // Show fixed RRSP withdrawal
     ws.getCell("Q1").value = "RRSP Fixed Withdrawal";
-    ws.getCell("R1").value = rrspWithdrawFixed;
+    ws.getCell("R1").value = rrspWithdrawFixedFinal;
     ws.getCell("R1").numFmt = moneyFmt;
     ws.getCell("Q1").font = { bold: true };
 
