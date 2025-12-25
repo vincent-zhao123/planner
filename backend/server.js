@@ -116,6 +116,8 @@ app.post("/api/generate-excel", async (req, res) => {
       const rows = [];
       let depletedEarly = false;
 
+      let nonrCleared = false;
+
       for (let t = 0; t < yearsToPlanLocal; t++) {
         const age = currentAge + t;
         const income = t < yearsToRetire ? incomeAnnual : 0;
@@ -131,32 +133,84 @@ app.post("/api/generate-excel", async (req, res) => {
 
         // ===== TFSA =====
         const tfsaInit = t === 0 ? tfsaInitialBalance : tfsaEndPrev * (1 + tfsaRoi);
-        const tfsaC = t < yearsToRetire ? tfsaContribute : 0;
+
+        const tfsaTarget = nonrCleared ? 0 : tfsaContribute; // not tied to retirement anymore
+        let tfsaC = tfsaTarget; // may be reduced in retirement ladder
         let tfsaW = 0;
 
         // ===== NON-REGISTERED =====
         const nonrInit = t === 0 ? nonRegisteredInitialBalance : nonrEndPrev * (1 + nonRegisteredRoi);
 
-        const nonrC = income > 0 ? Math.max(0, income - expense - rrspC - tfsaC) : 0;
+        let nonrC = 0;
         let nonrW = 0;
 
-        // Retirement spending coverage: RRSP fixed -> NON-R -> TFSA
-        if (income === 0) {
-          const needAfterRRSP = Math.max(0, expense - rrspW);
+        // PRE-RET rule: nonr balances income vs (expense + rrspC + tfsaC)
+        if (t < yearsToRetire) {
+          const need = expense + rrspC + tfsaC;
+          if (income >= need) {
+            nonrC = income - need;
+          } else {
+            let short = need - income;
 
-          if (needAfterRRSP > nonrInit + (tfsaInit + tfsaC) + EPS) {
-            depletedEarly = true;
-          }
+            // withdraw nonr first
+            nonrW = Math.min(nonrInit, short);
+            short -= nonrW;
 
-          nonrW = Math.min(nonrInit, needAfterRRSP);
-          const remaining = needAfterRRSP - nonrW;
-          if (remaining > 0) {
-            tfsaW = Math.min(tfsaInit + tfsaC, remaining);
+            // if still short, withdraw from TFSA (so the year is still feasible)
+            if (short > EPS) {
+              tfsaW = Math.min(tfsaInit + tfsaC, short);
+              short -= tfsaW;
+            }
+
+            if (short > EPS) depletedEarly = true;
           }
         }
 
-        const nonrEnd = nonrInit + nonrC - nonrW;
+        // POST-RET ladder
+        if (t >= yearsToRetire) {
+          // tfsaC is currently target (0 if nonrCleared). may be reduced below.
+          // rule: nonrW = expense + tfsaC - rrspW, extra rrsp goes to nonr
+
+          let nonrNeed = expense + tfsaC - rrspW;
+
+          if (nonrNeed <= 0) {
+            // RRSP covers expense + TFSA contrib, extra goes into nonr
+            nonrW = 0;
+            nonrC = -nonrNeed;
+          } else if (nonrInit + EPS >= nonrNeed) {
+            // nonr can cover gap fully
+            nonrW = nonrNeed;
+            nonrC = 0;
+          } else {
+            // nonr cannot cover
+            nonrW = nonrInit;
+            nonrC = 0;
+
+            // only contribute to TFSA what is affordable:
+            // tfsaC = nonrW + rrspW - expense (capped)
+            tfsaC = Math.min(tfsaTarget, Math.max(0, nonrW + rrspW - expense));
+
+            // check if expenses are covered by rrspW + nonrW
+            const covered = rrspW + nonrW;
+            if (covered + EPS < expense) {
+              // still not enough -> no TFSA contribution, withdraw from TFSA for what's left
+              tfsaC = 0;
+              const gap = expense - covered;
+
+              tfsaW = Math.min(tfsaInit, gap);
+              const remaining = gap - tfsaW;
+
+              if (remaining > EPS) depletedEarly = true;
+            }
+          }
+        }
+
+
+        let nonrEnd = nonrInit + nonrC - nonrW;
+        if (nonrEnd < EPS) nonrEnd = 0;
         nonrEndPrev = nonrEnd;
+
+        if (nonrEnd === 0) nonrCleared = true;
 
         let tfsaEnd = tfsaInit + tfsaC - tfsaW;
         if (tfsaEnd < EPS) tfsaEnd = 0;
@@ -178,50 +232,62 @@ app.post("/api/generate-excel", async (req, res) => {
       return { rows, depletedEarly, endingTotal };
     }
 
-    function simulateGivenN(N, expensesBase) {
-      const rrspW = solveRRSPWithdrawal({
+    function solveRrspWForHorizon(N) {
+      return solveRRSPWithdrawal({
         yearsToRetire,
         yearsToPlan: N,
         rrspInitialBalance,
         rrspContribute,
         rrspRoi,
       });
-
-      const proj = runProjection(expensesBase, N, rrspW);
-      return { yearsSurvived: proj.rows.length, rrspW, proj };
     }
 
-    let yearsToPlanFinal = yearsToPlan;   // default for standard/solveExpenses
+    // simulate with a given N (yearsToPlan) and return how many years actually survived
+    function simulateGivenN(N, expensesBase) {
+      const rrspW = solveRrspWForHorizon(N);
+      const proj = runProjection(expensesBase, N, rrspW);
+      return { yearsSurvived: proj.rows.length, rrspW };
+    }
+
+    let yearsToPlanFinal = Math.max(1, yearsToPlan);
     let rrspWithdrawFixedFinal = null;
 
+    // ---- Step 4: Find Max Years ----
     if (mode === "findMaxYears") {
       let N = MAX_YEARS_CAP;
-      let last = -1;
 
+      // Fixed-point iteration: N -> simulate(N) -> N'
+      // This converges to a stable N under your "constant RRSP withdrawal" rule.
       for (let iter = 0; iter < 25; iter++) {
-        const r = simulateGivenN(N, expensesAnnual);
-        const N2 = r.yearsSurvived;
+        const { yearsSurvived } = simulateGivenN(N, expensesAnnual);
 
-        if (N2 === N || N2 === last) {
-          yearsToPlanFinal = N2;
-          rrspWithdrawFixedFinal = r.rrspW;
+        // stable -> done
+        if (yearsSurvived === N) {
+          yearsToPlanFinal = N;
+          rrspWithdrawFixedFinal = solveRrspWForHorizon(yearsToPlanFinal);
           break;
         }
 
-        last = N;
-        N = N2;
+        // update guess (typically decreases)
+        N = yearsSurvived;
+
+        // guard
+        if (N <= 0) {
+          yearsToPlanFinal = 0;
+          rrspWithdrawFixedFinal = 0;
+          break;
+        }
       }
 
-      // If it never broke (rare), finalize with latest N
+      // if we didn't set it in loop (rare), finalize with last N
       if (rrspWithdrawFixedFinal == null) {
-        const r = simulateGivenN(N, expensesAnnual);
-        yearsToPlanFinal = r.yearsSurvived;
-        rrspWithdrawFixedFinal = r.rrspW;
+        yearsToPlanFinal = Math.max(1, N);
+        rrspWithdrawFixedFinal = solveRrspWForHorizon(yearsToPlanFinal);
       }
     }
 
-    // Standard + solveExpenses: rrspWithdrawFixedFinal computed normally
-    if (mode !== "findMaxYears") {
+    // For standard + solveExpenses, determine rrspWithdrawFixedFinal if not already set by findMaxYears
+    if (rrspWithdrawFixedFinal == null) {
       rrspWithdrawFixedFinal = solveRRSPWithdrawal({
         yearsToRetire,
         yearsToPlan: yearsToPlanFinal,
@@ -231,24 +297,21 @@ app.post("/api/generate-excel", async (req, res) => {
       });
     }
 
-
-    let solvedInitialExpense = null;
-
     if (mode === "solveExpenses") {
       // yearsToPlan must be provided by user in mode 3
       const yearsToPlanLocal = Math.max(1, yearsToPlan);
-
+      const rrspWForSolve = solveRrspWForHorizon(yearsToPlanLocal);
       // Binary search for MAX initial expense that does NOT deplete early
       let lo = 0;
       let hi = Math.max(1000, (rrspInitialBalance + tfsaInitialBalance + nonRegisteredInitialBalance) * 2); // starter
       // Expand hi until it definitely depletes early (so we have a bracket)
-      while (!runProjection(hi, yearsToPlanLocal).depletedEarly && hi < 1e9) {
+      while (!runProjection(hi, yearsToPlanLocal, rrspWForSolve).depletedEarly && hi < 1e9) {
         hi *= 2;
       }
 
       for (let i = 0; i < 50; i++) { // enough for dollar-level precision
         const mid = (lo + hi) / 2;
-        const r = runProjection(mid, yearsToPlanLocal);
+        const r = runProjection(mid, yearsToPlanLocal, rrspWForSolve);
 
         if (r.depletedEarly) {
           hi = mid;       // too high
@@ -260,31 +323,15 @@ app.post("/api/generate-excel", async (req, res) => {
       solvedInitialExpense = Math.round(lo); // $1 precision
     }
 
-    // determine final yearsToPlan
-    yearsToPlanFinal = yearsToPlan;
+    let solvedInitialExpense = null;
 
-    if (mode === "findMaxYears") {
-      const tmp = runProjection(
-        expensesAnnual,
-        yearsToPlan, // MAX_YEARS_CAP
-        0            // RRSP withdraw not needed yet
-      );
-      yearsToPlanFinal = tmp.rows.length;
-    }
-
-    // solve RRSP withdrawal with FINAL horizon
-    rrspWithdrawFixedFinal = solveRRSPWithdrawal({
-      yearsToRetire,
-      yearsToPlan: yearsToPlanFinal,
-      rrspInitialBalance,
-      rrspContribute,
-      rrspRoi,
-    });
-
-    // final projection used by Excel
+    // Decide which expense base to use
+    // - standard + findMaxYears use user-entered expensesAnnual
+    // - solveExpenses uses solvedInitialExpense (computed by your binary search)
     const expenseBase =
-  mode === "solveExpenses" ? solvedInitialExpense : expensesAnnual;
+      mode === "solveExpenses" ? solvedInitialExpense : expensesAnnual;
 
+    // Run the final simulation ONCE. Excel must use these rows.
     const finalProjection = runProjection(
       expenseBase,
       yearsToPlanFinal,
