@@ -97,18 +97,18 @@ app.post("/api/generate-excel", async (req, res) => {
     const nonRegisteredInitialBalance = toNum(d.nonRegisteredInitialBalance);
     const nonRegisteredRoi = normalizeRate(d.nonRegisteredRoi);
 
-    // ---- Solve RRSP fixed withdrawal (retirement years) ----
+    /*// ---- Solve RRSP fixed withdrawal (retirement years) ----
     const rrspWithdrawFixed = solveRRSPWithdrawal({
       yearsToRetire,
       yearsToPlan,
       rrspInitialBalance,
       rrspContribute,
       rrspRoi,
-    });
+    });*/
 
     const EPS = 1e-9;
 
-    function runProjection(expensesBase, yearsToPlanLocal) {
+    function runProjection(expensesBase, yearsToPlanLocal, rrspWithdrawFixedUsed) {
       let rrspEndPrev = rrspInitialBalance;
       let tfsaEndPrev = tfsaInitialBalance;
       let nonrEndPrev = nonRegisteredInitialBalance;
@@ -125,7 +125,7 @@ app.post("/api/generate-excel", async (req, res) => {
         // ===== RRSP =====
         const rrspInit = t === 0 ? rrspInitialBalance : rrspEndPrev * (1 + rrspRoi);
         const rrspC = t < yearsToRetire ? rrspContribute : 0;
-        const rrspW = t >= yearsToRetire ? rrspWithdrawFixed : 0;
+        const rrspW = t >= yearsToRetire ? rrspWithdrawFixedUsed : 0;
         const rrspEnd = rrspInit + rrspC - rrspW;
         rrspEndPrev = rrspEnd;
 
@@ -206,16 +206,38 @@ app.post("/api/generate-excel", async (req, res) => {
       solvedInitialExpense = Math.round(lo); // $1 precision
     }
 
-    let projection;
+    // determine final yearsToPlan
+    let yearsToPlanFinal = yearsToPlan;
 
-    if (mode === "solveExpenses") {
-      projection = runProjection(solvedInitialExpense, yearsToPlan);
-    } else {
-      // standard + findMaxYears (for now)
-      projection = runProjection(expensesAnnual, yearsToPlan);
+    if (mode === "findMaxYears") {
+      const tmp = runProjection(
+        expensesAnnual,
+        yearsToPlan, // MAX_YEARS_CAP
+        0            // RRSP withdraw not needed yet
+      );
+      yearsToPlanFinal = tmp.rows.length;
     }
 
-    const rows = projection.rows;
+    // solve RRSP withdrawal with FINAL horizon
+    const rrspWithdrawFixedFinal = solveRRSPWithdrawal({
+      yearsToRetire,
+      yearsToPlan: yearsToPlanFinal,
+      rrspInitialBalance,
+      rrspContribute,
+      rrspRoi,
+    });
+
+    // final projection used by Excel
+    const expenseBase =
+      mode === "solveExpenses" ? solvedInitialExpense : expensesAnnual;
+
+    const finalProjection = runProjection(
+      expenseBase,
+      yearsToPlanFinal,
+      rrspWithdrawFixedFinal
+    );
+
+    const rows = finalProjection.rows;
 
     // ---- Excel ----
     const wb = new ExcelJS.Workbook();
@@ -275,7 +297,7 @@ app.post("/api/generate-excel", async (req, res) => {
     // Data rows
     const startRow = 3;
     let tfsaCleared = false;
-    
+
     rows.forEach((row, i) => {
       const r = startRow + i;
 
